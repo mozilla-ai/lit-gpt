@@ -7,6 +7,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 import lightning as L
 import torch
 from lightning.fabric.loggers import CSVLogger
+from lightning.pytorch.loggers import WandbLogger
 from lightning.fabric.plugins import BitsandbytesPrecision
 from lightning.fabric.strategies import FSDPStrategy
 
@@ -35,13 +36,16 @@ eval_max_new_tokens = 100
 log_interval = 1
 devices = 1
 
+# set wandb project name (if not set, the env variable WANDB_PROJECT will be used)
+wandb_project = "neurips-falcon7b"
+
 # Hyperparameters
-learning_rate = 3e-4
+learning_rate = 1e-4
 batch_size = 128
-micro_batch_size = 4
+micro_batch_size = 2
 gradient_accumulation_iters = batch_size // micro_batch_size
 assert gradient_accumulation_iters > 0
-max_iters = 50000  # train dataset size
+max_iters = 1000 # train dataset size
 weight_decay = 0.01
 lora_r = 8
 lora_alpha = 16
@@ -90,8 +94,14 @@ def setup(
     else:
         strategy = "auto"
 
-    logger = CSVLogger(out_dir.parent, out_dir.name, flush_logs_every_n_steps=log_interval)
-    fabric = L.Fabric(devices=devices, strategy=strategy, precision=precision, loggers=logger, plugins=plugins)
+    # NOTE we disable CSVLogger here because it has no log_hyperparams method implemented
+    # logger = CSVLogger(out_dir.parent, out_dir.name, flush_logs_every_n_steps=log_interval)
+
+    # set wandb run name
+    wandb_run = f"falcon7b_bs_{batch_size}_microbs_{micro_batch_size}_lr_{learning_rate}"
+    wandb_logger = WandbLogger(project=wandb_project, name=wandb_run)
+
+    fabric = L.Fabric(devices=devices, strategy=strategy, precision=precision, loggers=wandb_logger, plugins=plugins)
     fabric.print(hparams)
     fabric.launch(main, data_dir, checkpoint_dir, out_dir, quantize)
 
@@ -125,6 +135,11 @@ def main(fabric: L.Fabric, data_dir: Path, checkpoint_dir: Path, out_dir: Path, 
     )
     checkpoint_path = checkpoint_dir / "lit_model.pth"
     fabric.print(f"Loading model {str(checkpoint_path)!r} with {config.__dict__}")
+
+    # group together model config and hyperparams, then log everything to wandb
+    hparams.update(config.__dict__)
+    fabric.logger.log_hyperparams(hparams)
+
     with fabric.init_module(empty_init=(devices > 1)):
         model = GPT(config)
     mark_only_lora_as_trainable(model)
@@ -242,12 +257,31 @@ def train(
                 f" {(t1 - iter_t0) * 1000:.2f}ms{' (optimizer.step)' if not is_accumulating else ''}"
             )
 
+            # wandb log
+            fabric.log_dict({
+                "iter": iter_num,
+                "step": step_count,
+                "loss": loss.item(),
+                "learning_rate": lr,
+            })
+
+            if not is_accumulating:
+                fabric.log_dict({"stepwise_loss": loss.item()}, step_count)
+
         if not is_accumulating and step_count % eval_interval == 0:
             t0 = time.perf_counter()
             val_loss = validate(fabric, model, val_data, tokenizer)
             t1 = time.perf_counter() - t0
             speed_monitor.eval_end(t1)
             fabric.print(f"step {iter_num}: val loss {val_loss.item():.4f}, val time: {t1 * 1000:.2f}ms")
+
+            # wandb log
+            fabric.log_dict({
+                "iter": iter_num,
+                "step": step_count,
+                "val_loss": val_loss.item(),
+            })
+
             fabric.barrier()
         if not is_accumulating and step_count % save_interval == 0:
             checkpoint_path = out_dir / f"iter-{iter_num:06d}-ckpt.pth"
