@@ -20,13 +20,11 @@ from lit_gpt.tokenizer import Tokenizer
 def prepare(
     destination_path: Path = Path("data/pubmed-qa-instruct"),
     checkpoint_dir: Path = Path("checkpoints/stabilityai/stablelm-base-alpha-3b"),
-    test_split_fraction: float = 0.1,
-    seed: int = 42,
     mask_inputs: bool = False,
     data_file_name: str = "pubmed_qa_instruction_cleaned.json",
     data_repo_id: str = "FedML/PubMedQA_instruction",
-    data_file_url: str = "https://huggingface.co/datasets/databricks/databricks-dolly-15k/resolve/main/databricks-dolly-15k.jsonl",
     ignore_index: int = -1,
+    access_token: Optional[str] = os.getenv("HF_TOKEN"),
     max_seq_length: Optional[int] = None,
 ) -> None:
     """Prepare the pubmedQA Instruction dataset for instruction tuning.
@@ -118,7 +116,7 @@ def prepare_sample(example: dict, tokenizer: Tokenizer, max_length: int, mask_in
     in the label that correspond to the original input prompt get masked out (default).
     """
     full_prompt = generate_prompt(example)
-    full_prompt_and_response = full_prompt + example["output"]
+    full_prompt_and_response = full_prompt + example["response"]
     encoded_full_prompt = tokenizer.encode(full_prompt, max_length=max_length)
     encoded_full_prompt_and_response = tokenizer.encode(full_prompt_and_response, eos=True, max_length=max_length)
 
