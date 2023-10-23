@@ -54,15 +54,6 @@ def prepare(
     dataset = load_dataset(data_repo_id, use_auth_token=access_token)
     train_set = dataset["train"]
     test_set = dataset["test"]
-    
-    # download_if_missing(data_file_path, data_file_url)
-
-    # with open(data_file_path, "r", encoding="utf-8") as file:
-    #     data = file.readlines()
-    #     data = [json.loads(line) for line in data]
-    # for item in data:
-    #     item["input"] = item.pop("context")
-    #     item["output"] = item.pop("response")
 
     print("Loading tokenizer...")
     tokenizer = Tokenizer(checkpoint_dir)
@@ -98,7 +89,7 @@ def prepare(
     ]
     torch.save(test_set, destination_path / "test.pt")
 
-def prepare_sample(example: dict, tokenizer: Tokenizer, max_length: int, mask_inputs: bool, ignore_index: int) -> None:
+def prepare_sample(example: dict, tokenizer: Tokenizer, max_length: int, mask_inputs: bool, ignore_index: int) -> dict:
     """Processes a single sample.
 
     Each sample in the dataset consists of:
