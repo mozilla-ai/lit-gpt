@@ -126,6 +126,10 @@ def main(fabric: L.Fabric, data_dir: Path, checkpoint_dir: Path, out_dir: Path, 
     train_data = torch.load(data_dir / "train.pt")
     val_data = torch.load(data_dir / "test.pt")
 
+    if hparams['max_iters'] == 0:
+        hparams['max_iters'] = len(train_data)
+    fabric.print(f"Maximum number of iterations: {hparams['max_iters']}")
+
     if not any((hparams['lora_query'], hparams['lora_key'], hparams['lora_value'], 
                 hparams['lora_projection'], hparams['lora_mlp'], hparams['lora_head'])):
         fabric.print("Warning: all LoRA layers are disabled!")
